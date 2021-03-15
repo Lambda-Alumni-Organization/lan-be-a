@@ -1,4 +1,3 @@
-const { count } = require('../database/dbConfig');
 const database = require('../database/dbConfig');
 
 // Create a room
