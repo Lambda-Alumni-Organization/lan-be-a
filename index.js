@@ -6,8 +6,10 @@ const session = require('express-session');
 const passportSetup = require('./config/passportSetup'); // eslint-disable-line
 const knexSessionStore = require('connect-session-knex')(session);
 const config = require('./database/dbConfig');
+const jwt = require('jsonwebtoken');
 
 const authRouter = require('./routes/auth');
+
 const userRouter = require('./routes/user');
 const postRouter = require('./routes/post');
 const commentRouter = require('./routes/comment');
@@ -24,42 +26,24 @@ const FRONTEND_URL =
   process.env.FRONTEND_DEPLOYED_URL || 'http://localhost:3000';
 const PORT = process.env.PORT || 5000;
 app.all('/*', function(req, res, next) {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    next();
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
 });
 app.use(express.json());
 app.use(helmet());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Origin', 'https://main.d37zm5ayhfot8q.amplifyapp.com');
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS,POST,PUT');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   next();
 });
 app.use(
   cors({
     credentials: true,
     origin: FRONTEND_URL,
-  })
-);
-
-app.use(
-  session({
-    name: 'LAN',
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-      secure: false, // Set to true once in production
-      SameSite: 'none',
-    },
-    store: new knexSessionStore({
-      knex: config,
-    }),
   })
 );
 
@@ -81,13 +65,33 @@ async function verifyRole(req, res, next) {
 }
 
 app.use('/api/auth', authRouter);
-app.use('/api/user', userRouter);
-app.use('/api/post', verifyRole, postRouter);
-app.use('/api/comment', verifyRole, commentRouter);
-app.use('/api/room', verifyRole, roomRouter);
-app.use('/api/admin', verifyRole, adminRouter);
-app.use('/api/mod', verifyRole, modRouter);
-app.use('/api/search', verifyRole, searchRouter);
+
+const tokenVerified = (req, res, next) => {
+  const token = req.headers.authorization;
+  if (token) {
+    const secret = process.env.SESSION_SECRET || 'potatoes in the sky';
+    jwt.verify(token, secret, (err, decodedToken) => {
+      if (err) {
+        // token is invalid
+        res.status(401).json({ you: 'Limited Access' });
+      } else {
+        // token is valid
+        req.user = decodedToken;
+        next();
+      }
+    });
+  } else {
+    res.status(401).json({ you: 'Access Denied' });
+  }
+};
+
+app.use('/api/user', tokenVerified, userRouter);
+app.use('/api/post', tokenVerified, verifyRole, postRouter);
+app.use('/api/comment', tokenVerified, verifyRole, commentRouter);
+app.use('/api/room', tokenVerified, verifyRole, roomRouter);
+app.use('/api/admin', tokenVerified, verifyRole, adminRouter);
+app.use('/api/mod', tokenVerified, verifyRole, modRouter);
+app.use('/api/search', tokenVerified, verifyRole, searchRouter);
 
 app.get('/', (request, response) =>
   response.send({ message: 'Server working' })
